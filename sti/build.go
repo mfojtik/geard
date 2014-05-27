@@ -36,6 +36,11 @@ type BuildRequest struct {
 	ScriptsUrl  string
 }
 
+type ReturnVal struct {
+	retval interface{}
+	err    error
+}
+
 type BuildResult STIResult
 
 // Build processes a BuildRequest and returns a *BuildResult and an error.
@@ -161,23 +166,48 @@ func (h requestHandler) build(req BuildRequest) (*BuildResult, error) {
 		}
 	}
 
-	if req.ScriptsUrl != "" {
-		h.downloadScripts(req.ScriptsUrl, filepath.Join(req.WorkingDir, "scripts"))
+	log.Println("test")
+	downloadScriptsChan := make(chan ReturnVal)
+	prepareSourceChan := make(chan ReturnVal)
+
+	go func() {
+		log.Println("[async] Downloading scripts...")
+		if req.ScriptsUrl != "" {
+			h.downloadScripts(req.ScriptsUrl, filepath.Join(req.WorkingDir, "scripts"))
+		}
+
+		defaultUrl, err := h.getDefaultUrl(req, req.BaseImage)
+		if err != nil {
+			downloadScriptsChan <- ReturnVal{retval: defaultUrl, err: err}
+			return
+		}
+		if defaultUrl != "" {
+			h.downloadScripts(defaultUrl, filepath.Join(req.WorkingDir, "defaultScripts"))
+		}
+		downloadScriptsChan <- ReturnVal{retval: defaultUrl}
+	}()
+
+	go func() {
+		log.Println("[async] Preparing source dir...")
+		targetSourceDir := filepath.Join(req.WorkingDir, "src")
+		err := h.prepareSourceDir(req.Source, targetSourceDir, req.Ref)
+		if err != nil {
+			prepareSourceChan <- ReturnVal{err: err}
+		} else {
+			prepareSourceChan <- ReturnVal{retval: true}
+		}
+	}()
+
+	msg := <-downloadScriptsChan
+	if defaultUrl := msg.retval; defaultUrl != nil {
+		return nil, msg.err
 	}
 
-	defaultUrl, err := h.getDefaultUrl(req, req.BaseImage)
-	if err != nil {
-		return nil, err
-	}
-	if defaultUrl != "" {
-		h.downloadScripts(defaultUrl, filepath.Join(req.WorkingDir, "defaultScripts"))
+	msg = <-prepareSourceChan
+	if msg.err != nil {
+		return nil, msg.err
 	}
 
-	targetSourceDir := filepath.Join(req.WorkingDir, "src")
-	err = h.prepareSourceDir(req.Source, targetSourceDir, req.Ref)
-	if err != nil {
-		return nil, err
-	}
 	incremental := !req.Clean
 
 	if incremental {
@@ -206,7 +236,7 @@ func (h requestHandler) build(req BuildRequest) (*BuildResult, error) {
 
 	if incremental {
 		artifactTmpDir := filepath.Join(req.WorkingDir, "artifacts")
-		err = os.Mkdir(artifactTmpDir, 0700)
+		err := os.Mkdir(artifactTmpDir, 0700)
 		if err != nil {
 			return nil, err
 		}
