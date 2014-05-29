@@ -2,9 +2,9 @@ package sti
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -41,17 +41,17 @@ func validCloneSpec(source string, verbose bool) bool {
 
 func gitClone(source, target string) error {
 	cmd := exec.Command("git", "clone", "--recursive", source, target)
-	//cmd.Stdout, cmd.Stderr = os.Stdout, os.Stdout
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stdout
+	err := cmd.Start()
 
-	if err := cmd.Start(); err != nil {
+	if err != nil {
 		return err
 	}
 
-	fmt.Println("### wait 1")
-	if err := cmd.Wait(); err != nil {
+	err = cmd.Wait()
+	if err != nil {
 		return err
 	}
-	fmt.Println("### wait 2")
 
 	return nil
 }
