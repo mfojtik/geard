@@ -185,6 +185,7 @@ func (h requestHandler) build(req BuildRequest) (*BuildResult, error) {
 			h.downloadScripts(defaultUrl, filepath.Join(req.WorkingDir, "defaultScripts"))
 		}
 		downloadScriptsChan <- ReturnVal{retval: defaultUrl}
+		log.Println("[async] Downloading scripts finished...")
 	}()
 
 	go func() {
@@ -196,6 +197,7 @@ func (h requestHandler) build(req BuildRequest) (*BuildResult, error) {
 		} else {
 			prepareSourceChan <- ReturnVal{retval: true}
 		}
+		log.Println("[async] Preparing sources finished...")
 	}()
 
 	msg := <-downloadScriptsChan
@@ -203,8 +205,7 @@ func (h requestHandler) build(req BuildRequest) (*BuildResult, error) {
 		return nil, msg.err
 	}
 
-	msg = <-prepareSourceChan
-	if msg.err != nil {
+	if msg = <-prepareSourceChan; msg.err != nil {
 		return nil, msg.err
 	}
 
